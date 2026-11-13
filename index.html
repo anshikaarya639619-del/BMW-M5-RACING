@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#080b12">
+<meta name="description" content="Midnight M5 Run — a lightweight mobile-friendly highway racing game.">
+<title>Midnight M5 Run</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#070a10;color:#fff;touch-action:none}
+#game{display:block;width:100vw;height:100dvh;background:#101a28}
+.hud{position:fixed;inset:0 0 auto;display:flex;justify-content:space-between;align-items:flex-start;padding:14px;pointer-events:none;text-shadow:0 2px 8px #000}
+.brand{font-weight:900;letter-spacing:.13em;font-size:13px;color:#dbeafe}.brand span{display:block;font-size:10px;color:#94a3b8;letter-spacing:.22em;margin-top:3px}
+.stats{display:flex;gap:9px}.pill{background:#07111dcc;border:1px solid #ffffff25;border-radius:12px;padding:8px 11px;min-width:68px;text-align:center;backdrop-filter:blur(8px)}.pill small{display:block;color:#94a3b8;font-size:9px;letter-spacing:.12em}.pill b{font-size:17px}
+#message{position:fixed;left:50%;top:43%;transform:translate(-50%,-50%);width:min(88vw,390px);text-align:center;background:#08111de8;border:1px solid #ffffff30;border-radius:20px;padding:24px 20px;box-shadow:0 18px 60px #0009}
+#message h1{margin:0 0 8px;font-size:clamp(25px,7vw,38px);letter-spacing:.05em}#message p{color:#bdc8d8;line-height:1.5;margin:8px 0 18px;font-size:14px}
+button{border:0;border-radius:12px;padding:13px 22px;background:linear-gradient(135deg,#dbeafe,#7dd3fc);color:#07111d;font-weight:900;font-size:15px}
+.controls{position:fixed;inset:auto 0 18px;display:flex;justify-content:space-between;align-items:end;padding:0 18px;pointer-events:none}
+.pad{display:flex;gap:12px}.control{pointer-events:auto;width:66px;height:62px;border-radius:17px;background:#08111dbb;border:1px solid #ffffff45;color:white;font-size:26px;font-weight:800;backdrop-filter:blur(8px);touch-action:none;user-select:none}
+#nitro{width:78px;font-size:12px;letter-spacing:.08em;color:#7dd3fc;border-color:#38bdf888}
+.hint{position:fixed;bottom:94px;left:0;right:0;text-align:center;color:#cbd5e177;font-size:10px;letter-spacing:.12em;pointer-events:none}
+@media(min-width:800px){.control{width:76px;height:68px}}
+</style>
+</head>
+<body>
+<canvas id="game" aria-label="Racing game"></canvas>
+<div class="hud"><div class="brand">MIDNIGHT M5 RUN<span>HIGHWAY EDITION</span></div><div class="stats"><div class="pill"><small>SPEED</small><b id="speed">0</b></div><div class="pill"><small>DISTANCE</small><b id="distance">0</b></div><div class="pill"><small>SCORE</small><b id="score">0</b></div></div></div>
+<div id="message"><h1>MIDNIGHT RUN</h1><p>Drive through the night. Dodge traffic, build speed and use nitro wisely.<br>← → / A D to steer · Hold NITRO to boost</p><button id="start">START ENGINE</button></div>
+<div class="hint">TOUCH CONTROLS · AVOID TRAFFIC · SURVIVE</div>
+<div class="controls"><div class="pad"><button class="control" id="left" aria-label="Steer left">◀</button><button class="control" id="right" aria-label="Steer right">▶</button></div><button class="control" id="nitro">NITRO ⚡</button></div>
+<script>
+(()=>{
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d',{alpha:false});
+const $=id=>document.getElementById(id);let W=0,H=0,dpr=1;
+function resize(){dpr=Math.min(devicePixelRatio||1,1.35);W=innerWidth;H=innerHeight;canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);ctx.setTransform(dpr,0,0,dpr,0,0)}
+addEventListener('resize',resize);resize();
+let running=false,over=false,last=0,elapsed=0,distance=0,score=0,speed=0,player=0,traffic=[],spawn=0,nitro=100,boost=false,keys={};
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+function roadAt(t){const horizon=H*.31;return {y:horizon+t*(H-horizon),half:W*(.055+t*.39),center:W*.5+Math.sin(elapsed*.22+t*2)*W*.035*t}}
+function car(x,y,w,h,color,playerCar=false){ctx.save();ctx.translate(x,y);ctx.fillStyle='#0008';ctx.beginPath();ctx.ellipse(0,h*.43,w*.72,h*.18,0,0,Math.PI*2);ctx.fill();
+ctx.fillStyle=color;ctx.beginPath();ctx.moveTo(-w*.48,h*.38);ctx.lineTo(-w*.43,-h*.25);ctx.quadraticCurveTo(-w*.35,-h*.52,-w*.18,-h*.54);ctx.lineTo(w*.18,-h*.54);ctx.quadraticCurveTo(w*.35,-h*.52,w*.43,-h*.25);ctx.lineTo(w*.48,h*.38);ctx.quadraticCurveTo(0,h*.52,-w*.48,h*.38);ctx.fill();
+ctx.fillStyle=playerCar?'#9bdcff':'#26384d';ctx.beginPath();ctx.moveTo(-w*.29,-h*.2);ctx.lineTo(-w*.19,-h*.43);ctx.lineTo(w*.19,-h*.43);ctx.lineTo(w*.29,-h*.2);ctx.closePath();ctx.fill();
+ctx.fillStyle='#e5f4ff';ctx.fillRect(-w*.36,h*.19,w*.18,h*.07);ctx.fillRect(w*.18,h*.19,w*.18,h*.07);
+ctx.fillStyle='#080b10';ctx.fillRect(-w*.53,-h*.22,w*.12,h*.27);ctx.fillRect(w*.41,-h*.22,w*.12,h*.27);ctx.fillRect(-w*.53,h*.22,w*.12,h*.24);ctx.fillRect(w*.41,h*.22,w*.12,h*.24);
+if(playerCar){ctx.fillStyle='#38bdf8';ctx.fillRect(-w*.24,h*.39,w*.48,h*.035)}ctx.restore()}
+function draw(){
+ctx.fillStyle='#101d2b';ctx.fillRect(0,0,W,H);
+let sky=ctx.createLinearGradient(0,0,0,H*.42);sky.addColorStop(0,'#050914');sky.addColorStop(1,'#263c52');ctx.fillStyle=sky;ctx.fillRect(0,0,W,H*.42);
+ctx.fillStyle='#dbeafe';ctx.globalAlpha=.65;for(let i=0;i<24;i++){let x=(i*97)%W,y=(i*53)%(H*.27);ctx.fillRect(x,y,1.3,1.3)}ctx.globalAlpha=1;
+const horizon=H*.31;
+ctx.fillStyle='#14251f';ctx.fillRect(0,horizon,W,H-horizon);
+const top=roadAt(0),bottom=roadAt(1);
+ctx.fillStyle='#343b45';ctx.beginPath();ctx.moveTo(top.center-top.half,horizon);ctx.lineTo(bottom.center-bottom.half,H);ctx.lineTo(bottom.center+bottom.half,H);ctx.lineTo(top.center+top.half,horizon);ctx.fill();
+ctx.strokeStyle='#d9e3ed';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(top.center-top.half,horizon);ctx.lineTo(bottom.center-bottom.half,H);ctx.moveTo(top.center+top.half,horizon);ctx.lineTo(bottom.center+bottom.half,H);ctx.stroke();
+for(let i=0;i<16;i++){let t=((i/16+elapsed*.34)%1);let r=roadAt(t);let dashH=3+t*23;ctx.fillStyle='#d6dbe2';for(let lane=-1;lane<=1;lane+=2){let x=r.center+lane*r.half/3;ctx.fillRect(x-2*t-1,r.y-dashH/2,3+t*4,dashH)}}
+for(let i=0;i<18;i++){let t=((i/18+elapsed*.22)%1),r=roadAt(t),side=i%2?1:-1,x=r.center+side*(r.half+W*(.035+t*.08));ctx.fillStyle=i%3?'#183b31':'#d4a85b';ctx.fillRect(x-2-t*4,r.y-8-t*12,4+t*8,12+t*28)}
+traffic.sort((a,b)=>a.t-b.t).forEach(o=>{let r=roadAt(o.t),x=r.center+o.lane*r.half*.53,w=13+o.t*38;car(x,r.y,w,w*1.75,o.color)});
+let pr=roadAt(.88),px=pr.center+player*pr.half*.53;car(px,H*.86,Math.max(30,W*.085),Math.max(55,H*.13),'#c8d7e8',true);
+if(boost&&running){ctx.fillStyle='#38bdf855';ctx.fillRect(0,H*.7,W,H*.3)}
+}
+function reset(){elapsed=0;distance=0;score=0;speed=0;player=0;traffic=[];spawn=0;nitro=100;over=false}
+function end(){running=false;over=true;$('message').style.display='block';$('message').innerHTML='<h1>RUN OVER</h1><p>Distance: '+Math.floor(distance)+' m · Score: '+score+'<br>Best score: '+Math.max(score,+(localStorage.m5best||0))+'</p><button id="start">RACE AGAIN</button>';$('start').onclick=start}
+function start(){reset();running=true;$('message').style.display='none';last=performance.now();requestAnimationFrame(loop)}
+function loop(now){if(!running)return;let dt=Math.min((now-last)/1000,.04);last=now;elapsed+=dt;
+boost=(keys.nitro||keys.shift)&&nitro>0;let target=boost?245:165;speed+=(target-speed)*dt*1.8;if(boost)nitro=Math.max(0,nitro-34*dt);else nitro=Math.min(100,nitro+9*dt);
+let steer=(keys.right?1:0)-(keys.left?1:0);player=clamp(player+steer*dt*(boost?1.45:1.8),-1.05,1.05);
+distance+=speed*dt*.055;score=Math.floor(distance*2);
+spawn-=dt;if(spawn<=0){traffic.push({t:0,lane:Math.floor(Math.random()*3)-1,color:['#d95d52','#d4a84b','#7896b4','#a4aab5'][Math.floor(Math.random()*4)]});spawn=Math.max(.48,1.25-distance/1800)}
+traffic.forEach(o=>o.t+=dt*(.18+speed/950));traffic=traffic.filter(o=>o.t<1.08);
+const pr=roadAt(.88),px=pr.center+player*pr.half*.53;
+for(const o of traffic){if(o.t>.79&&o.t<.98){let r=roadAt(o.t),ox=r.center+o.lane*r.half*.53;if(Math.abs(px-ox)<W*.075){end();break}}}
+$('speed').textContent=Math.round(speed)+' km/h';$('distance').textContent=Math.floor(distance)+' m';$('score').textContent=score;
+draw();if(running)requestAnimationFrame(loop)}
+function bind(id,key){let el=$(id);el.addEventListener('pointerdown',e=>{e.preventDefault();keys[key]=true;el.setPointerCapture(e.pointerId)});['pointerup','pointercancel','lostpointercapture'].forEach(ev=>el.addEventListener(ev,()=>keys[key]=false))}
+bind('left','left');bind('right','right');bind('nitro','nitro');
+addEventListener('keydown',e=>{if(['ArrowLeft','a','A'].includes(e.key))keys.left=true;if(['ArrowRight','d','D'].includes(e.key))keys.right=true;if(e.key==='Shift')keys.shift=true});
+addEventListener('keyup',e=>{if(['ArrowLeft','a','A'].includes(e.key))keys.left=false;if(['ArrowRight','d','D'].includes(e.key))keys.right=false;if(e.key==='Shift')keys.shift=false});
+$('start').onclick=start;
+document.addEventListener('visibilitychange',()=>{if(document.hidden){keys={};if(running)running=false}else if(!over&&$('message').style.display==='none'){running=true;last=performance.now();requestAnimationFrame(loop)}});
+draw();
+})();
+</script>
+</body></html>
